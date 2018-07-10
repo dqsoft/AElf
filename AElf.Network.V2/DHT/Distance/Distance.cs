@@ -1,4 +1,4 @@
-﻿using AElf.Network.V2.DHT.Distance.Helpers;
+﻿using AElf.Network.V2.DHT.Helpers;
 
 namespace AElf.Network.V2.DHT.Distance
 {
@@ -13,8 +13,8 @@ namespace AElf.Network.V2.DHT.Distance
         public static int Calculate(string addr1Hex, string addr2Hex)
         {
             // convert hex addresses to binary
-            string addr1Bin = Converter.HexToBin(addr1Hex);
-            string addr2Bin = Converter.HexToBin(addr2Hex);
+            string addr1Bin = BaseTypeConverter.HexToBin(addr1Hex);
+            string addr2Bin = BaseTypeConverter.HexToBin(addr2Hex);
             
             return ComputeXor(addr1Bin, addr2Bin); // compute & return distance
         }
@@ -27,8 +27,8 @@ namespace AElf.Network.V2.DHT.Distance
         /// <returns>XOR as an integer</returns>
         private static int ComputeXor(string addr1Bin, string addr2Bin)
         {
-            int addr1Int = Converter.BinToInt(addr1Bin);
-            int addr2Int = Converter.BinToInt(addr2Bin);
+            int addr1Int = BaseTypeConverter.BinToInt(addr1Bin);
+            int addr2Int = BaseTypeConverter.BinToInt(addr2Bin);
 
             return addr1Int ^ addr2Int;
         }

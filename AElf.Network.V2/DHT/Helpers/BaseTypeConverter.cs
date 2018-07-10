@@ -1,8 +1,8 @@
 ﻿using System;
 
-namespace AElf.Network.V2.DHT.Distance.Helpers
+namespace AElf.Network.V2.DHT.Helpers
 {
-    public class Converter
+    public class BaseTypeConverter
     {
         /// <summary>
         /// Converts a hexadecimal value to a binary string.
