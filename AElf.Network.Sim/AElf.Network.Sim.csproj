@@ -4,6 +4,10 @@
     <TargetFramework>netcoreapp2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\AElf.Common\AElf.Common.csproj">
+      <Project>{4EC22E9F-7019-470B-B990-B9E020DBBFB2}</Project>
+      <Name>AElf.Common</Name>
+    </ProjectReference>
     <ProjectReference Include="..\AElf.Network.V2\AElf.Network.V2.csproj">
       <Project>{64993DB4-47CB-4B3A-B5EC-8605A9C3DD2D}</Project>
       <Name>AElf.Network.V2</Name>
