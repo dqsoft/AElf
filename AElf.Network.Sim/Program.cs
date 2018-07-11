@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
@@ -31,6 +33,7 @@ namespace AElf.Network.Sim
         }
     }
 
+    // Node
     public class CommunicationTester
     {
         public async void Start(bool isServer)
@@ -40,8 +43,7 @@ namespace AElf.Network.Sim
             if (isServer)
             {
                 Server s = new Server();
-                await Task.Run(() => s.Start());
-                ;
+                Task.Run(() => s.StartListningForConnections()).ConfigureAwait(false);
             }
             else
             {
@@ -55,27 +57,47 @@ namespace AElf.Network.Sim
     public class Server
     {
         private Connection _client;
+        private BlockingCollection<Packet> _packetQueue = new BlockingCollection<Packet>();
         
-        public async Task Start()
-        {
-            await AwaitConnection();
-        }
-
-        public async Task AwaitConnection()
+        private List<Connection> _connections = new List<Connection>();
+        
+        // This method is start on another thread
+        public async Task StartListningForConnections()
         {
             TcpListener tcpListener = new TcpListener(IPAddress.Any, 6789);
             tcpListener.Start();
             
+            while (true)
+            {
+                await AwaitConnection(tcpListener);
+            }
+        }
+
+        public async Task AwaitConnection(TcpListener tcpListener)
+        {
             TcpClient client = await tcpListener.AcceptTcpClientAsync();
-            
             _client = new Connection(client);
+            
+            _client.PacketReceived += ClientOnPacketReceived;
             
             // Start listen loop on own thread
             Task.Run(ListenLoop).ConfigureAwait(false);
-            
-            // When a connection is accepted, execution continues
         }
-        
+
+        private int cnt = 0;
+        private void ClientOnPacketReceived(object sender, EventArgs eventArgs)
+        {
+            if (!(eventArgs is PacketReceivedEventArgs a) || a.Packet == null)
+            {
+                Console.WriteLine("Packet event problem.");
+                return;
+            }
+
+            _packetQueue.Add(a.Packet);
+            
+            Console.WriteLine("Enqueued packet : " + Convert.ToBase64String(a.Packet.Data) + ", cnt: " + cnt++);
+        }
+
         public async Task ListenLoop()
         {
             await _client.Read();
@@ -95,14 +117,29 @@ namespace AElf.Network.Sim
             
             _client = new Connection(tcpClient);
 
-            byte[] arr = BitConverter.GetBytes((ushort) 5);
-            _client.WriteBytes(arr);
-
+            byte[] type = { 1 };
+            byte[] length = BitConverter.GetBytes((ushort) 5);
             byte[] arrData = ByteArrayHelpers.RandomFill(5);
-            _client.WriteBytes(arrData);
+            
+            for (int i = 0; i < 1000; i++)
+            {
+                _client.WriteBytes(type);
+                _client.WriteBytes(length);
+                _client.WriteBytes(arrData);
 
-            Console.WriteLine("Send" + Convert.ToBase64String(arrData));
+                Console.WriteLine("Send" + Convert.ToBase64String(arrData));
+            }
+            
+            /*
+             * byte[] type = await ReadBytesAsync(1);
+                    int typeInt = BitConverter.ToInt32(type, 0);
+                    
+                    byte[] sizePrefixe = await ReadBytesAsync(2);
+                    ushort packetLength = BitConverter.ToUInt16(sizePrefixe, 0);
 
+                    Console.WriteLine("received : " + packetLength);
+                    byte[] packetData = await ReadBytesAsync(packetLength);
+                    */
         }
         
         /*public async Task WriteLoop()

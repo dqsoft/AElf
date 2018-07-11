@@ -4,10 +4,24 @@ using System.Threading.Tasks;
 
 namespace AElf.Network.V2.Connection
 {
+    public class Packet
+    {
+        public int Type { get; set; } 
+        public ushort Length { get; set; } 
+        public byte[] Data { get; set; }
+    }
+
+    public class PacketReceivedEventArgs : EventArgs
+    {
+        public Packet Packet { get; set; }
+    }
+    
     public class Connection
     {
         private TcpClient _tcpClient;
         private NetworkStream _stream;
+
+        public event EventHandler PacketReceived;
 
         public Connection(TcpClient tcpClient)
         {
@@ -22,17 +36,26 @@ namespace AElf.Network.V2.Connection
         {
             try
             {
-                /*while (true)
-                {*/
+                while (true)
+                {
+                    byte[] type = await ReadBytesAsync(1);
+                    byte typeInt = type[0];
+                    
                     byte[] sizePrefixe = await ReadBytesAsync(2);
                     ushort packetLength = BitConverter.ToUInt16(sizePrefixe, 0);
 
-                    Console.WriteLine("received : " + packetLength);
                     byte[] packetData = await ReadBytesAsync(packetLength);
-                
-                    Console.WriteLine("Read" + Convert.ToBase64String(packetData));
-                
-                //}
+                    
+                    Packet packet = new Packet();
+                    packet.Type = typeInt;
+                    packet.Length = packetLength;
+                    packet.Data = packetData;
+                    
+                    PacketReceivedEventArgs args = new PacketReceivedEventArgs();
+                    args.Packet = packet;
+                    
+                    PacketReceived?.Invoke(this, args);
+                }
             }
             catch (Exception e)
             {
@@ -47,25 +70,34 @@ namespace AElf.Network.V2.Connection
         /// <returns>The read bytes.</returns>
         protected async Task<byte[]> ReadBytesAsync(int amount)
         {
-            if (amount == 0) 
-                return new byte[0];
-            
-            byte[] requestedBytes = new byte[amount];
-            
-            int receivedIndex = 0;
-            while (receivedIndex < amount)
+            try
             {
-                while (_tcpClient.Available == 0)
-                    await Task.Delay(TimeSpan.FromMilliseconds(5));
+                if (amount == 0) 
+                    return new byte[0];
+            
+                byte[] requestedBytes = new byte[amount];
+            
+                int receivedIndex = 0;
+                while (receivedIndex < amount)
+                {
+                    while (_tcpClient.Available == 0)
+                        await Task.Delay(TimeSpan.FromMilliseconds(5));
 
-                int readAmount = (amount - receivedIndex >= _tcpClient.Available) ? _tcpClient.Available : amount - receivedIndex;
+                    int readAmount = (amount - receivedIndex >= _tcpClient.Available) ? _tcpClient.Available : amount - receivedIndex;
                 
-                await _stream.ReadAsync(requestedBytes, receivedIndex, readAmount);
+                    await _stream.ReadAsync(requestedBytes, receivedIndex, readAmount);
                 
-                receivedIndex += readAmount;
+                    receivedIndex += readAmount;
+                }
+
+                return requestedBytes;
             }
-
-            return requestedBytes;
+            catch (Exception e)
+            {
+                return new byte[0];
+            }
+            
+            return new byte[0];
         }
 
         public void WriteBytes(byte[] bytes)
