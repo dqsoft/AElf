@@ -6,7 +6,10 @@ namespace AElf.Network.V2.Connection
 {
     public class PeerDialer
     {
-        public const int CONNECTION_TIMEOUT = 3000;
+        public const int DefaultConnectionTimeout = 3000;
+        
+        public int ReconnectInterval { get; set; } = 3000;
+        public int ReconnectTryCount { get; set; } = 3;
         
         private readonly string _ipAddress;
         private readonly int _port;
@@ -17,16 +20,16 @@ namespace AElf.Network.V2.Connection
             _port = port;
         }
 
-        public async Task<MessageReader> DialAsync()
+        public async Task<TcpClient> DialAsync(int timeout = DefaultConnectionTimeout)
         {
             try
             {
                 TcpClient tcpClient = new TcpClient();
-                Task timeoutTask = Task.Delay(CONNECTION_TIMEOUT);
-                Task connectTask = Task.Factory.StartNew(() => tcpClient.Connect(_ipAddress, _port));
+                Task timeoutTask = Task.Delay(timeout);
+                Task connectTask = Task.Run(() => tcpClient.Connect(_ipAddress, _port));
 
                 if (await Task.WhenAny(timeoutTask, connectTask) != timeoutTask && tcpClient.Connected)
-                    return new MessageReader(tcpClient);
+                    return tcpClient;
             }
             catch (Exception e)
             {
@@ -35,6 +38,33 @@ namespace AElf.Network.V2.Connection
             
             Console.WriteLine("Could not connect, operation timed out.");
             
+            return null;
+        }
+
+        public async Task<TcpClient> DialWithRetryAsync()
+        {
+            for (int i = 0; i < ReconnectInterval; i++)
+            {
+                Console.WriteLine($"Reconnect attempt number {i+1}.");
+                
+                TcpClient client;
+                
+                try
+                {
+                    client = await DialAsync();
+                    
+                    if (client != null)
+                        return client;
+                    
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Error dialing the peer.");
+                }
+                
+                await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval)); // retry wait
+            }
+
             return null;
         }
     }

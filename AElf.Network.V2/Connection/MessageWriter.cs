@@ -9,19 +9,16 @@ namespace AElf.Network.V2.Connection
 {
     public class MessageWriter
     {
-        private readonly TcpClient _tcpClient;
         private readonly NetworkStream _stream;
 
         private readonly BlockingCollection<Message> _outboundMessages;
         
         public int MaxOutboundPacketSize { get; set; } = 1024;
         
-        public MessageWriter(TcpClient tcpClient)
+        public MessageWriter(NetworkStream stream)
         {
             _outboundMessages = new BlockingCollection<Message>();
-            
-            _tcpClient = tcpClient;
-            _stream = tcpClient.GetStream();
+            _stream = stream;
         }
         
         public void Start()

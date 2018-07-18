@@ -96,5 +96,10 @@ namespace AElf.Network.Sim
 
             return message;
         }
+
+        public void DiconnectAllPeers()
+        {
+            _netManager.DropConnections();
+        }
     }
 }

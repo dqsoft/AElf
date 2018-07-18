@@ -26,7 +26,17 @@ namespace AElf.Network.Sim
             
             Task.Run(() => comTester.Start(args[0])).ConfigureAwait(false);
 
-            Console.ReadKey();
+            while (true)
+            {
+                Console.Write("Input: ");
+                
+                char c = Console.ReadKey().KeyChar;
+
+                if (c == 'd')
+                {
+                    comTester.DiconnectAllPeers();
+                }
+            }            
         }
     }
 }

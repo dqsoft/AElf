@@ -56,6 +56,8 @@ namespace AElf.Network.Sim
                 // Start processing jobs
                 Task.Run(() => JobConsumerLoop()).ConfigureAwait(false);
 
+                ConnectToBootnodes().GetAwaiter().GetResult();
+
                 /*if (isClient)
                 {
                     PeerDialer dialer = new PeerDialer(IPAddress.Loopback.ToString(), bootnodePort);
@@ -85,7 +87,12 @@ namespace AElf.Network.Sim
             foreach (var bt in _bootnodePorts.Where(b => b != _port))
             {
                 PeerDialer dialer = new PeerDialer(IPAddress.Loopback.ToString(), bt);
-                await Task.Delay(90);
+                TcpClient client = await dialer.DialAsync();
+
+                if (client != null)
+                {
+                    CreatePeerFromConnection(client);
+                }
             }
         }
 
@@ -107,11 +114,8 @@ namespace AElf.Network.Sim
 
         private NetPeer CreatePeerFromConnection(TcpClient client)
         {
-            MessageReader reader = new MessageReader(client);
-            MessageWriter writer = new MessageWriter(client);
-            
-            NetPeer netPeer = new NetPeer(reader, writer);
-            netPeer.Initialize();
+            NetPeer netPeer = new NetPeer();
+            netPeer.Initialize(client);
                 
             netPeer.MessageReceived += NetPeerOnMessageReceived;
                 
@@ -175,6 +179,16 @@ namespace AElf.Network.Sim
             {
                 Console.WriteLine(e);
             }
+        }
+
+        public void DropConnections()
+        {
+            foreach (var p in _currentPeers)
+            {
+                p.Disconnect();
+            }
+            
+            _currentPeers.Clear();
         }
 
         /*public async Task DequeueLoop()

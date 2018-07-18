@@ -1,12 +1,11 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Sockets;
-using System.Security.Cryptography.X509Certificates;
-using System.Threading;
 using System.Threading.Tasks;
 using AElf.Common.ByteArrayHelpers;
+using AElf.Network.V2.Connection.Exceptions;
 
 namespace AElf.Network.V2.Connection
 {
@@ -34,28 +33,30 @@ namespace AElf.Network.V2.Connection
     
     public class MessageReader
     {
-        private TcpClient _tcpClient;
-        private NetworkStream _stream;
+        private const int TypeLength = 1;
+        private const int IntLength = 4;
+        
+        private readonly NetworkStream _stream;
 
         public event EventHandler PacketReceived;
+        public event EventHandler StreamClosed;
 
-        public readonly List<PartialPacket> _partialPacketBuffer;
+        private readonly List<PartialPacket> _partialPacketBuffer;
+
+        public bool IsConnected { get; private set; } = false;
         
-        public MessageReader(TcpClient tcpClient)
+        public MessageReader(NetworkStream stream)
         {
             _partialPacketBuffer = new List<PartialPacket>();
             
-            _tcpClient = tcpClient;
-            _stream = tcpClient.GetStream();
+            _stream = stream;
         }
         
         public void Start()
         {
             Task.Run(Read).ConfigureAwait(false);
+            IsConnected = true;
         }
-
-        private const int TYPE_LENGTH = 1;
-        private const int INT_LENGTH = 4;
         
         /// <summary>
         /// Reads the bytes from the stream.
@@ -64,47 +65,47 @@ namespace AElf.Network.V2.Connection
         {
             try
             {
-                Console.WriteLine("Read started !");
-                
                 while (true)
                 {
                     // Read type 
                     int type = await ReadByte();
-                    
+
                     // Is this a partial reception ?
                     bool isBuffered = await ReadBoolean();
-                    
+
                     // Read the size of the data
                     int length = await ReadInt();
-                    
+
                     if (isBuffered)
                     {
                         // If it's a partial packet read the packet info
                         PartialPacket partialPacket = await ReadPartialPacket(length);
-                        
+
                         // todo property control
-                        
+
                         if (!partialPacket.IsEnd)
                         {
                             _partialPacketBuffer.Add(partialPacket);
-                            Console.WriteLine($"[Packet reception] partial - type : {type}, isBuffered : {isBuffered}, length : {length}");
+                            Console.WriteLine(
+                                $"[Packet reception] partial - type : {type}, isBuffered : {isBuffered}, length : {length}");
                         }
                         else
                         {
                             // This is the last packet
                             // Concat all data 
-                            
+
                             _partialPacketBuffer.Add(partialPacket);
 
                             byte[] allData =
                                 ByteArrayHelpers.Combine(_partialPacketBuffer.Select(pp => pp.Data).ToArray());
-                            
-                            Console.WriteLine($"[Packet reception] partial - partials : {_partialPacketBuffer.Count}, total length : {allData.Length}");
+
+                            Console.WriteLine(
+                                $"[Packet reception] partial - partials : {_partialPacketBuffer.Count}, total length : {allData.Length}");
 
                             // Clear the buffer for the next partial to receive 
                             _partialPacketBuffer.Clear();
-                            
-                            Message message = new Message { Type = type, Length = allData.Length, Payload = allData };
+
+                            Message message = new Message {Type = type, Length = allData.Length, Payload = allData};
                             FireMessageReceivedEvent(message);
                         }
                     }
@@ -112,19 +113,36 @@ namespace AElf.Network.V2.Connection
                     {
                         // If it's not a partial packet the next "length" bytes should be 
                         // the entire data
-                        
+
                         byte[] packetData = await ReadBytesAsync(length);
-                        
-                        Console.WriteLine($"[Packet reception] normal - type : {type}, isBuffered : {isBuffered}, length : {length}");
-                        
-                        Message message = new Message { Type = type, Length = length, Payload = packetData };
+
+                        Console.WriteLine(
+                            $"[Packet reception] normal - type : {type}, isBuffered : {isBuffered}, length : {length}");
+
+                        Message message = new Message {Type = type, Length = length, Payload = packetData};
                         FireMessageReceivedEvent(message);
                     }
                 }
             }
+            catch (PeerDisconnectedException e)
+            {
+                Console.WriteLine("[Message reader] Connection was aborted\n");
+                StreamClosed?.Invoke(this, EventArgs.Empty);
+            }
             catch (Exception e)
             {
-                Console.WriteLine("EX : Reading packet from stream");
+                if (!IsConnected && e is IOException)
+                {
+                    // If the stream fails while the connection is logically closed (call to Close())
+                    // we simply return - the StreamClosed event will no be closed.
+                    return;
+                }
+
+                IsConnected = false;
+                _stream?.Close();
+                
+                Console.WriteLine("[Message reader] Connection was aborted\n" + e);
+                StreamClosed?.Invoke(this, EventArgs.Empty);
             }
         }
 
@@ -143,7 +161,7 @@ namespace AElf.Network.V2.Connection
 
         private async Task<int> ReadInt()
         {
-            byte[] intBytes = await ReadBytesAsync(INT_LENGTH);
+            byte[] intBytes = await ReadBytesAsync(IntLength);
             return BitConverter.ToInt32(intBytes, 0);
         }
 
@@ -175,31 +193,37 @@ namespace AElf.Network.V2.Connection
         /// <returns>The read bytes.</returns>
         protected async Task<byte[]> ReadBytesAsync(int amount)
         {
-            try
+            if (amount == 0)
             {
-                if (amount == 0)
-                {
-                    Console.WriteLine("Read amount is 0");
-                    return new byte[0];
-                }
-                
-                byte[] requestedBytes = new byte[amount];
-                
-                int receivedIndex = 0;
-                while (receivedIndex < amount)
-                {
-                    int readAmount = await _stream.ReadAsync(requestedBytes, receivedIndex, amount - receivedIndex);
-                    receivedIndex += readAmount;
-                }
-                
-                return requestedBytes;
-            }
-            catch (Exception e)
-            {
+                Console.WriteLine("Read amount is 0");
                 return new byte[0];
             }
             
-            return new byte[0];
+            byte[] requestedBytes = new byte[amount];
+            
+            int receivedIndex = 0;
+            while (receivedIndex < amount)
+            {
+                int readAmount = await _stream.ReadAsync(requestedBytes, receivedIndex, amount - receivedIndex);
+                
+                if (readAmount == 0)
+                    throw new PeerDisconnectedException();
+                
+                receivedIndex += readAmount;
+            }
+            
+            return requestedBytes;
+        }
+
+        public void Close()
+        {
+            // Change logical connection state
+            IsConnected = false;
+            
+            // This will cause an IOException in the read loop
+            // but since IsConnected is switched to false, it 
+            // will not fire the disconnection exception.
+            _stream?.Close();
         }
     }
 }
