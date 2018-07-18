@@ -17,7 +17,7 @@ namespace AElf.Network.V2.Connection
             _port = port;
         }
 
-        public async Task<Connection> DialAsync()
+        public async Task<MessageReader> DialAsync()
         {
             try
             {
@@ -26,13 +26,15 @@ namespace AElf.Network.V2.Connection
                 Task connectTask = Task.Factory.StartNew(() => tcpClient.Connect(_ipAddress, _port));
 
                 if (await Task.WhenAny(timeoutTask, connectTask) != timeoutTask && tcpClient.Connected)
-                    return new Connection(tcpClient);
+                    return new MessageReader(tcpClient);
             }
             catch (Exception e)
             {
-                Console.WriteLine("Exception during connection - timeout ");
+                Console.WriteLine("Exception during connection");
             }
-
+            
+            Console.WriteLine("Could not connect, operation timed out.");
+            
             return null;
         }
     }
